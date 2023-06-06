@@ -31,6 +31,11 @@ function interleave_kernel(result, bits, idxs)
     return
 end
 
+function modulate(bits, bit_map)
+    n = length(bits) ÷ 2
+    return (bit_map[bits[1:n]] |> Float64) + im * (bit_map[bits[n + 1:end]] |> Float64)
+end
+
 function cu_ktoi(N, ks)
     result_cuda = CUDA.CuArray{Int}(undef, N)
     @cuda threads=1 blocks=1 ktoi_kernel(result_cuda, CuArray([N]), ks)
@@ -61,20 +66,61 @@ function cu_interleave(block, type=:qpsk)
     js = cu_itoj(N, s, is)
     result_cuda = CUDA.CuArray{Int}(undef, N)
     @cuda threads=1 blocks=1 interleave_kernel(result_cuda, block, js)
-    return block[js]
+    return block
 end
 
-function cu_to_blocks(data::CuArray, type=:bpsk)
-    nbits = Dict(:bpsk => 48, :qpsk => 96, :qam16 => 192, :qam64 => 288)
+function cu_to_blocks(data::CuArray, type=:qpsk)
+    nbits = Dict(:qpsk => 96, :qam16 => 192, :qam64 => 288)
     pad_bits = nbits[type] - mod(length(data), nbits[type])
     data = vcat(data, zeros(pad_bits))
 
     return reshape(data, nbits[type], :)
 end
+using CUDA
 
+using CUDA
+
+function modulate_kernel(result, bits, bit_map_keys, bit_map_vals)
+    tid = threadIdx().x
+    n = length(bits) ÷ 2
+    
+    if tid <= n
+        key = bits[tid]
+        idx = findfirst(x -> x == key, bit_map_keys)
+        result[tid] = bit_map_vals[idx]
+    elseif tid <= length(bits)
+        key = bits[tid]
+        idx = findfirst(x -> x == key, bit_map_keys)
+        result[tid] = bit_map_vals[idx]
+    end
+    return nothing
+end
+
+function cu_modulate_block(block, type=:qpsk)
+    values = Dict(
+        :qpsk  => Dict([0] => -1,
+                       [1] => 1),
+        :qam16 => Dict([0, 0] => -3, [0, 1] => -1,
+                       [1, 1] => 1, [1, 0] => 3),
+        :qam64 => Dict([0, 0, 0] => -7, [0, 0, 1] => -5, [0, 1, 1] => -3, [0, 1, 0] => -1,
+                       [1, 1, 0] => 1, [1, 1, 1] => 3, [1, 0, 1] => 5, [1, 0, 0] => 7))[type]
+    nbits = Dict(:qpsk => 2, :qam16 => 4, :qam64 => 6)[type]
+    n = length(block) ÷ nbits
+    
+    result_d = CuVector{ComplexF64}(undef, n)
+    
+    bit_map_keys = collect(keys(values))
+    bit_map_vals = collect(values)
+    
+    @cuda threads=n modulate_kernel(result_d, block, bit_map_keys, bit_map_vals)
+    
+    return result_d
+end
 
 stream_d = CuArray(bitrand(msglen) .|> Int)
 
 block_d = cu_to_blocks(stream_d, scheme)[:,1]
 
 block_i = cu_interleave(block_d, scheme)
+
+block_m = cu_modulate_block(block_i, scheme)
