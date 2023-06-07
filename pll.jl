@@ -77,38 +77,24 @@ function cu_to_blocks(data::CuArray, type=:qpsk)
     return reshape(data, nbits[type], :)
 end
 
-function  to_dec(bits)
-    return sum(2^(i-1) for i in eachindex(bits))    
-end
+function modulate_kernel(result, bits)
+    bits_map = Dict([0, 0] => -3, [0, 1] => -1, [1, 1] => 1, [1, 0] => 3)   
+    idx = threadIdx().x + blockIdx().x * blockDim().x
 
-function modulate_kernel(result, bits, bit_map_keys, bit_map_vals)
-    xs, ys = gridDim()
-    x = xs/2 |> Int
-    for y = 1:ys
-        I = findfirst(x -> x == key, bit_map_keys)
-        @inbounds result[y] = bit_map_vals[idx]+im*bit_map[bits[x+1:xs]]
-    end
+    @inbounds result[idx] = bits_map[bits[1:2, idx]] + im * bits_map[bits[3:4, idx]]
     return nothing
 end
 
-function cu_modulate_block(block, type=:qpsk)
-    bit_map = Dict(
-        :qpsk  => Dict([0] => -1,
-                       [1] => 1),
-        :qam16 => Dict([0, 0] => -3, [0, 1] => -1,
-                       [1, 1] => 1, [1, 0] => 3),
-        :qam64 => Dict([0, 0, 0] => -7, [0, 0, 1] => -5, [0, 1, 1] => -3, [0, 1, 0] => -1,
-                       [1, 1, 0] => 1, [1, 1, 1] => 3, [1, 0, 1] => 5, [1, 0, 0] => 7))[type]
-    nbits = Dict(:qpsk => 2, :qam16 => 4, :qam64 => 6)[type]
-    n = length(block) ÷ nbits
-    
+function cu_modulate(bits)
+    nbits = 4
+    n = length(bits) ÷ nbits
+
     result_d = CuVector{ComplexF64}(undef, n)
-    
-    bit_map_keys = to_bits.(keys(bit_map)) |> CuArray
-    bit_map_vals = collect(values(bit_map)) |> CuArray
-    
-    @cuda threads=n modulate_kernel(result_d, block, bit_map_keys, bit_map_vals)
-    
+
+    block = reshape(bits .|> Int, (nbits, n))
+
+    @cuda threads=n blocks=1 modulate_kernel(result_d, block)
+
     return result_d
 end
 
@@ -118,4 +104,4 @@ block_d = cu_to_blocks(stream_d, scheme)[:,1]
 
 block_i = cu_interleave(block_d, scheme)
 
-block_m = cu_modulate_block(block_i, scheme)
+block_m = cu_modulate(block_i)
