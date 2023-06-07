@@ -76,28 +76,23 @@ function cu_to_blocks(data::CuArray, type=:qpsk)
 
     return reshape(data, nbits[type], :)
 end
-using CUDA
 
-using CUDA
+function  to_dec(bits)
+    return sum(2^(i-1) for i in eachindex(bits))    
+end
 
 function modulate_kernel(result, bits, bit_map_keys, bit_map_vals)
-    tid = threadIdx().x
-    n = length(bits) ÷ 2
-    
-    if tid <= n
-        key = bits[tid]
-        idx = findfirst(x -> x == key, bit_map_keys)
-        result[tid] = bit_map_vals[idx]
-    elseif tid <= length(bits)
-        key = bits[tid]
-        idx = findfirst(x -> x == key, bit_map_keys)
-        result[tid] = bit_map_vals[idx]
+    xs, ys = gridDim()
+    x = xs/2 |> Int
+    for y = 1:ys
+        I = findfirst(x -> x == key, bit_map_keys)
+        @inbounds result[y] = bit_map_vals[idx]+im*bit_map[bits[x+1:xs]]
     end
     return nothing
 end
 
 function cu_modulate_block(block, type=:qpsk)
-    values = Dict(
+    bit_map = Dict(
         :qpsk  => Dict([0] => -1,
                        [1] => 1),
         :qam16 => Dict([0, 0] => -3, [0, 1] => -1,
@@ -109,8 +104,8 @@ function cu_modulate_block(block, type=:qpsk)
     
     result_d = CuVector{ComplexF64}(undef, n)
     
-    bit_map_keys = collect(keys(values))
-    bit_map_vals = collect(values)
+    bit_map_keys = to_bits.(keys(bit_map)) |> CuArray
+    bit_map_vals = collect(values(bit_map)) |> CuArray
     
     @cuda threads=n modulate_kernel(result_d, block, bit_map_keys, bit_map_vals)
     
