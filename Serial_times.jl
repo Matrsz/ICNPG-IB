@@ -58,4 +58,4 @@ bitlens = 10 .^ (2:8) .|> Int  # Example bit lengths
 
 p1 = plot_timings(bitlens, :qam16)
 
-savefig("times.png")
+savefig("times.svg")

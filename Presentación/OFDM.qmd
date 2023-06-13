@@ -1,0 +1,137 @@
+---
+title: "Transmisión OFDM basada en el Estándar IEEE 802.11"
+author: "Matías Roqueta"
+format: 
+  beamer:
+    institute: "ICNPG, Instituto Balseiro"
+    theme: Hannover
+    colortheme: seahorse
+    fonttheme: structuresmallcapsserif
+    code-overflow: wrap   
+    linestretch: 2
+---
+
+## Problema a Resolver
+
+Transformar una trama de bits en una señal temporal compleja:
+
+```
+01011101 10111101 01100110 00111001 10001001 00001100 01001100 11010101
+10111101 10110111 00011010 00001101 10011010 10001011 11000010 10100111
+```
+
+$$
+\downarrow \text{Modulación OFDM} \downarrow
+$$
+
+
+![](Images/wave.svg){fig-align="center"}
+
+## Descripción de OFDM
+
+- La unidad fundamental transmitida es el _Símbolo OFDM_. 
+ 
+- Cada símbolo corresponde a 48 números complejos.
+ 
+- Cada número complejo en un símbolo corresponde a $n$ bits, dependiendo de la modulación.
+ 
+- Entonces, un símbolo corresponde a $N=48\,n$ bits.
+ 
+- En el ejemplo se usó modulación 16-QAM con $n=4$, por lo que un símbolo OFDM codificará $N=192$ bits.
+
+- Se implementaron 3 etapas
+  - Entrelazado
+  - Modulación
+  - IFFT
+
+## Etapa Entrelazado
+
+- La trana de bits se subdivide en bloques de $N=192$ bits y cada bloque se entrelaza
+- Consiste en una permutación de índices de la trama de bits. Se realiza en dos etapas: $k \rightarrow i \rightarrow j$
+
+- Las reglas de cambio de índice son las siguientes
+
+$$
+\begin{aligned}
+  i &= \frac{N}{16} \times (k \bmod 16) + \left\lfloor\frac{k}{16}\right\rfloor \\[1em]
+  j &= \frac{N}{2} \times \left\lfloor\frac{i}{\frac{N}{2}}\right\rfloor + \left[i+N - \left\lfloor\frac{16 \times i}{N}\right\rfloor\right] \bmod \frac{N}{2}
+\end{aligned}
+$$
+
+## Etapa Entrelazado
+
+- Las reglas de entrelazado se pueden interpretar como productos por matrices ralas en donde los **1**s indican cuales elementos se permutan.
+
+::: {layout-ncol=2}
+
+![](Images/ktoi.svg){fig-align="center"}
+
+![](Images/itoj.svg){fig-align="center"}
+
+:::
+
+## Etapa Modulación
+
+Consiste en asignar a cada grupo de $n$ bits consecutivos un número complejo según alguna constelación
+
+![Ejemplo: Constelación 16-QAM, en donde $n=4$.](Images/mod.svg){fig-align="center" width=60%}
+
+## Etapa Modulación
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+La constelación 16-QAM tiene algunas propiedades
+
+
+![](Images/mod.svg){fig-align="center"}
+:::
+
+::: {.column width="50%"}
+
+Primeros bits $\rightarrow$ parte real
+
+Últimos bits $\rightarrow$ parte imag
+
+| Bits | | Valor    |
+| :-: | :-: | :-: |
+| `00` | $\longrightarrow$ | $-3$ |
+| `01` | $\longrightarrow$ | $-1$ |
+| `11` | $\longrightarrow$ | $\hphantom{-}1$ |
+| `10` | $\longrightarrow$ | $\hphantom{-}3$ |
+
+Ejemplo: `1001`$\longrightarrow 3 - j$
+:::
+
+::::
+
+## Etapa IFFT
+
+- El bloque de 192 bits se transformó en 48 números $\mathbb C$ 
+  
+- Se interpretan como descripción en frecuencia de la señal, y se transforma al domino temporal usando una IFFT
+
+  
+:::: {.columns align=center}
+
+::: {.column width="48%"}
+
+![](Images/freq.svg){fig-align="center"}
+
+:::
+
+::: {.column width="4%"}
+$$
+  \rightarrow
+$$
+
+:::
+
+::: {.column width="48%"}
+
+![](Images/wave2.svg){fig-align="center"}
+
+:::
+
+::::
