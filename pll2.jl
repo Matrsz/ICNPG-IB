@@ -3,6 +3,7 @@ using Base: Fix2
 using Plots, LaTeXStrings, ColorSchemes
 using FFTW
 using CUDA
+using CUDA.CUFFT
 
 default(fontfamily="serif", legendfontsize=10, titlefontsize=12, palette=:seaborn_deep6)
 gr()
@@ -90,3 +91,7 @@ println(block_i)
 block_m = cu_modulate(block_i)
 
 println(block_m)
+
+block_t = CUDA.CUFFT.ifft(block_m)
+
+println(block_t)
