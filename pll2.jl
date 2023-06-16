@@ -77,7 +77,7 @@ function cu_to_blocks(data::CuArray)
     return reshape(data, nbits, :)
 end
 
-function modulate_kernel(result::CuDeviceVector{ComplexF64,1}, bits::CuDeviceMatrix{Int64,1})
+function modulate_kernel(result::CuDeviceVector, bits::CuDeviceMatrix)
     function bits_map(bit1, bit2) 
         if bit1 == 0 & bit2 == 0
             return -3
@@ -88,10 +88,10 @@ function modulate_kernel(result::CuDeviceVector{ComplexF64,1}, bits::CuDeviceMat
         else
             return 3
         end
-    end    
-    idx = threadIdx().x + blockIdx().x * blockDim().x
-
-    @inbounds result[idx] = bits_map(bits[1, idx], bits[2, idx]) + im * bits_map(bits[3, idx], bits[4, idx])
+    end   
+    for idx in eachindex(result)
+        @inbounds result[idx] = bits_map(bits[1, idx], bits[2, idx]) + im * bits_map(bits[3, idx], bits[4, idx])
+    end
     return
 end
 
@@ -101,9 +101,9 @@ function cu_modulate(block_i)
 
     result_d = CuVector{ComplexF64}(undef, n)
 
-    block = reshape(block_i .|> Int, (nbits,n))
+    block = reshape(block_i .|> Int, (n, nbits))
 
-    @cuda threads=n blocks=1 modulate_kernel(result_d, block)
+    @cuda threads=1 blocks=1 modulate_kernel(result_d, block)
 
     return result_d
 end
