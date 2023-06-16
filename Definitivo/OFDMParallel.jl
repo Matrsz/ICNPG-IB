@@ -1,7 +1,7 @@
 module OFDMParallel
 using CUDA
 
-export to_blocks, modulate_block, interleave, to_waveform
+export to_blocks, modulate_block, interleave, to_time
 
 function interleave_idx_kernel(is, js, ks)
     N = 192
@@ -31,6 +31,15 @@ function interleave(block)
     @cuda threads=192 blocks=1 interleave_idx_kernel(is, js, ks)
     @cuda threads=192 blocks=1 interleave_kernel(result, block, js)
     return result
+end
+
+function interleave2(block)
+    N = 192
+    s = 2
+    ks = CuArray{Int}(0:N-1)
+    is = N ÷ 16 .* (ks .% 16) .+ floor.(ks .÷ 16)
+    js = s .* floor.(is .÷ s) .+ (is .+ N .- floor.((16 .* is) .÷ N)) .% s
+    return block[js.+1]
 end
 
 function to_blocks(data::CuArray)

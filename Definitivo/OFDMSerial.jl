@@ -35,20 +35,14 @@ function modulate_block(block_i)
     return [modulate(x) |> ComplexF64 for x in eachcol(block)]
 end
 
-function ktoi(N, k)
-    return N ÷ 16 * (k % 16) + floor(k ÷ 16) |> Int
-end
-
-function itoj(N, s, i)
-    return s * floor(i ÷ s) + (i + N - floor((16 * i) ÷ N)) % s |> Int
-end
-
 function interleave(block)
     N = 192
     s = 2
     ks = 0:N-1
-    is = ktoi.(N, ks)
-    js = itoj.(N, s, is)
+    ktoi(k) = N ÷ 16 * (k % 16) + floor(k ÷ 16)
+    itoj(i) = s * floor(i ÷ s) + (i + N - floor((16 * i) ÷ N)) % s
+    is = ktoi.(ks)
+    js = itoj.(is)
     return block[js.+1] .|> Int
 end
 

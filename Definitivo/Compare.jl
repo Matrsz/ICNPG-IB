@@ -32,6 +32,8 @@ i_block_p = i_block_p |> Vector
 m_block_p = m_block_p |> Vector
 t_block_p = t_block_p |> Vector
 
+t = range(0, 8, length=48)
+
 p1 = plot(t, t_block_s |> real, line=:steppost, linewidth=1, ylims=[-1,1], xlims=[0,8], yticks=:none, ylabel="canal I", title="Forma de Onda Transmitida")
 plot!(p1, t, t_block_p |> real, line=:steppost, linewidth=1, linestyle=:dash)
 p2 = plot(t, t_block_s |> imag, line=:steppost, linewidth=1, ylims=[-1,1], xlims=[0,8], yticks=:none, ylabel="canal Q", xlabel="t [μs]")
