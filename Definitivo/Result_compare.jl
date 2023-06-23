@@ -11,16 +11,20 @@ msglen = 1000
 stream = bitrand(msglen) .|> Int
 
 @info "Serial"
-block_s = OFDMSerial.to_blocks(stream)[1]
+block_s = OFDMSerial.to_blocks(stream)
 @info "Interleave..."
-i_block_s = OFDMSerial.interleave(block_s)
+i_block_s = OFDMSerial.interleave.(block_s)
 @info "Modulation..."
-m_block_s = OFDMSerial.modulate_block(i_block_s)
+m_block_s = OFDMSerial.modulate_block.(i_block_s)
 @info "IFFT..."
-t_block_s = OFDMSerial.to_waveform(m_block_s)
+t_block_s = OFDMSerial.to_waveform.(m_block_s)
+
+i_block_s = vcat(i_block_s...)
+m_block_s = vcat(m_block_s...)
+t_block_s = vcat(t_block_s...)
 
 @info "Parallel"
-block_p = CuArray(block_s)
+block_p = OFDMParallel.zero_pad(stream)
 @info "Interleave..."
 i_block_p = OFDMParallel.interleave(block_p)
 @info "Modulation..."
@@ -33,6 +37,8 @@ m_block_p = m_block_p |> Vector
 t_block_p = t_block_p |> Vector
 
 t = range(0, 8, length=48)
+t_block_s = t_block_s[1:48]
+t_block_p = t_block_p[1:48]
 
 p1 = plot(t, t_block_s |> real, line=:steppost, linewidth=1, ylims=[-1,1], xlims=[0,8], yticks=:none, ylabel="canal I", title="Forma de Onda Transmitida")
 plot!(p1, t, t_block_p |> real, line=:steppost, linewidth=1, linestyle=:dash)
