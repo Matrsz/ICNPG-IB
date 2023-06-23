@@ -16,10 +16,10 @@ format:
 Transformar una trama de bits en una señal temporal compleja:
 
 ```
-01011101 10111101 01100110 00111001 10001001 00001100 01001100 11010101
-10111101 10110111 00011010 00001101 10011010 10001011 11000010 10100111
+0101 1101 1011 1101 0110 0110 0011 1001 1000 1001 
+1011 1101 1011 0111 0001 1010 0000 1101 1001 1010 
+1000 1011 1100 0010 1010 0111 1100 1101 0101 1100
 ```
-
 $$
 \downarrow \text{Modulación OFDM} \downarrow
 $$
@@ -40,9 +40,7 @@ $$
 - En el ejemplo se usó modulación 16-QAM con $n=4$, por lo que un símbolo OFDM codificará $N=192$ bits.
 
 - Se implementaron 3 etapas
-  - Entrelazado
-  - Modulación
-  - IFFT
+  - Entrelazado $\rightarrow$ Modulación $\rightarrow$ IFFT
 
 ## Etapa Entrelazado
 
@@ -84,6 +82,7 @@ Consiste en asignar a cada grupo de $n$ bits consecutivos un número complejo se
 
 La constelación 16-QAM tiene algunas propiedades
 
+\vspace{1em}
 
 ![](Images/mod.svg){fig-align="center"}
 :::
@@ -93,6 +92,8 @@ La constelación 16-QAM tiene algunas propiedades
 Primeros bits $\rightarrow$ parte real
 
 Últimos bits $\rightarrow$ parte imag
+
+\vspace{1em}
 
 | Bits | | Valor    |
 | :-: | :-: | :-: |
@@ -112,6 +113,7 @@ Ejemplo: `1001`$\longrightarrow 3 - j$
   
 - Se interpretan como descripción en frecuencia de la señal, y se transforma al domino temporal usando una IFFT
 
+\vspace{1em}
   
 :::: {.columns align=center}
 
