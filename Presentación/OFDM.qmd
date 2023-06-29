@@ -9,6 +9,9 @@ format:
     fonttheme: structuresmallcapsserif
     code-overflow: wrap   
     linestretch: 2
+    monofont: 'Inconsolata'
+    monofontoptions: 
+    - Scale=0.9
 ---
 
 ## Problema a Resolver
@@ -16,9 +19,9 @@ format:
 Transformar una trama de bits en una señal temporal compleja:
 
 ```
-0101 1101 1011 1101 0110 0110 0011 1001 1000 1001 
-1011 1101 1011 0111 0001 1010 0000 1101 1001 1010 
-1000 1011 1100 0010 1010 0111 1100 1101 0101 1100
+0101 1101 1011 1101 0110 0110 0011 1001 1000 1001 0011
+1011 1101 1011 0111 0001 1010 0000 1101 1001 1010 1010
+1000 1011 1100 0010 1010 0111 1100 1101 0101 1100 1011
 ```
 $$
 \downarrow \text{Modulación OFDM} \downarrow
@@ -28,6 +31,8 @@ $$
 ![](Images/wave.svg){fig-align="center"}
 
 ## Descripción de OFDM
+
+- _Orthogonal Frequency Division Multiplexing_ consiste en descripción en frecuencia de las señales.
 
 - La unidad fundamental transmitida es el _Símbolo OFDM_. 
  
@@ -137,3 +142,146 @@ $$
 :::
 
 ::::
+
+## Entrelazado Paralelo
+
+Se aplica simultáneamente la transformación $k \rightarrow j \rightarrow i$
+
+Para eso se instancian todos los índices de la trama y se interpretan de la siguiente forma
+$$ 
+  k' = \text{offset}+k
+$$
+
+![](Images/offsets.svg){fig-align="center"}
+
+Las transformaciones se aplican sobre los índices $k$ obteniendo los índices $i$, y se recupera el vector de nuevos índices
+$$
+ i' = \text{offset}+i
+$$
+
+## Función Entrelazado Paralelo
+```julia
+function interleave(stream::CuArray)
+  N = 192
+  s = 2
+  all_idxs = CuArray{Int}(0:length(stream)-1)
+  ks = all_idxs .% 192
+  is = N÷16 .* (ks.%16) .+ floor.(ks.÷16)
+  js = s.*floor.(is.÷s) .+ (is.+N.-floor.(16.*is./N)).%s
+  offs = Int.(floor.(all_idxs./N).*N)
+  return stream[js.+ offs .+ 1]
+end
+```
+## Modulación Paralelo
+
+Estrategia para implementar la modulación de una trama de $N$ bits usando QPSK en dos pasos:
+$$
+\begin{bmatrix} 0\;1\;0\;1& 1\;1\;0\;1& 1\;0\;1\;1& 1\;1\;0\;1& 0\;1\;1\;0& 1\;1\;1\;0&\cdots\phantom.\end{bmatrix}_{N}
+$$
+1- Se reorganiza en una matriz de $4$ filas y $N/4$ columnas
+$$
+\begin{bmatrix} 
+0&1&1&1&0&1&\cdots\phantom.\\ 
+1&1&0&1&1&1&\cdots\phantom.\\
+0&0&1&0&1&1&\cdots\phantom.\\
+1&1&1&1&0&0&\cdots\phantom.
+\end{bmatrix}_{4\times \frac N 4}
+$$
+2- Cada columna se reduce a su respectivo número complejo
+$$\begin{bmatrix} -1-j & 1-j& -1+j& 1-j& -1+3j& 1+3j &\cdots\phantom. \end{bmatrix}_{\frac N 4}
+$$
+
+## Función Modulación
+
+```julia
+function modulate(stream::CuArray)
+  N = length(stream)/4 |> Int
+  result = CuVector{ComplexF64}(undef, N)
+  block = reshape(stream, 4, N)
+  @cuda threads=192 blocks=N modulate_kernel(result, block)
+  return result
+end
+
+function modulate_kernel(result::CuVector, bits::CuMatrix)
+  bits_map(x, y) = x ? (y ? 1 : 3) : (y ? -1 : -3)  
+  for idx in eachindex(result)
+    @inbounds result[i] = 
+        bits_map(bits[1,idx], bits[2,idx]) + im*
+        bits_map(bits[3,idx], bits[4,idx])
+  end
+  return nothing
+end
+```
+
+## IFFT Paralelo
+
+<!-- $$
+\begin{bmatrix}
+  x_{0} &\cdots & x_{47}  & x_{48} &\cdots & x_{95}  & x_{96} &\cdots & x_{143}
+\end{bmatrix}_{N}
+$$ -->
+Se reorganiza el vector de $N$ elementos en una matriz de $48\times N/48$ y se aplica la IFFT por columnas.
+$$
+\begin{bmatrix}
+  x_{0}  & x_{48}   & x_{96}  \\
+  \vdots & \vdots  & \vdots   \\
+  x_{47}& x_{95}& x_{143} 
+\end{bmatrix}_{48\times \frac{N}{48}}
+\xrightarrow{\text{IFFT}}\quad
+\begin{bmatrix}
+  \check{x}_{0}  & \check{x}_{48}   & \check{x}_{96}  \\
+  \vdots & \vdots  & \vdots  \\
+   \check{x}_{47}& \check{x}_{95}& \check{x}_{143} 
+\end{bmatrix}_{48\times \frac{N}{48}}
+$$
+Luego se vuelve a organizar el resultado en un vector de $N$ elementos y se retorna.
+<!-- $$
+\begin{bmatrix}
+  \check{x}_{0} &\cdots & \check{x}_{47}  & \check{x}_{48} &\cdots & \check{x}_{95}  & \check{x}_{96} &\cdots & \check{x}_{143}
+\end{bmatrix}_N
+$$ -->
+
+```julia
+function to_waveform(stream::CuArray)
+    block = reshape(stream, 48, :)
+    t_block = CUFFT.ifft(block, 1)
+    return reshape(t_block, size(stream))
+end
+```
+
+## Validación Igual Resultado Serie - Paralelo
+
+![](Images/compare.svg){fig-align="center" width="75%"}
+
+## Tiempo de Etapas en Serie
+
+![](Images/times_s.svg){fig-align="center"}
+
+## Tiempo Etapas en Paralelo
+
+![](Images/times_p.svg){fig-align="center"}
+
+## Aceleración Entrelazado
+
+![](Images/times_inter.svg){fig-align="center"}
+
+## Aceleración Modulación
+
+![](Images/times_mod.svg){fig-align="center"}
+
+## Aceleración IFFT
+
+![](Images/times_ifft.svg){fig-align="center"}
+
+
+## Conclusiones
+
+- En todas las etapas el tiempo es lineal con el número de bits, lo cual era esperado.
+
+- En todos los casos hay aceleración cuando se paraleliza el código. En el peor de los casos es una aceleración de $5\times$
+
+- La máxima aceleración se obtuvo cuando se utilizó un kernel y se eligió el número de hilos y de bloques.
+
+- Para optimizar el entrelazado paralelo se puede implementar un kernel en lugar de usar broadcast.
+
+- Para optimizar la IFFT se considera configurar el parámetro `batch` de `CUFFT.plan_ifft`.
